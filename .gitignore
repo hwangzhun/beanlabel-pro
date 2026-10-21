@@ -1,0 +1,26 @@
+# Dependencies and generated files
+node_modules/
+dist/
+deploy/
+build/
+coverage/
+*.tsbuildinfo
+
+# Local configuration; only examples belong in Git
+.env
+.env.*
+!.env.example
+
+# User data and runtime logs
+/data/
+/logs/
+*.log
+
+# Editor and OS files
+.cursor/
+.vscode/
+.idea/
+*.swp
+*.swo
+.DS_Store
+Thumbs.db

@@ -1,0 +1,474 @@
+<!DOCTYPE html>
+<html lang="zh-CN">
+<head>
+  <meta charset="utf-8" />
+  <meta name="viewport" content="width=device-width, initial-scale=1" />
+  <title>咖啡标签 PDF</title>
+  <link rel="preconnect" href="https://cdn.jsdelivr.net" crossorigin />
+    <link rel="stylesheet" crossorigin="anonymous" href="https://cdn.jsdelivr.net/npm/misans@5.0.0/lib/Normal/MiSansVF.min.css" />
+  <style>
+    * {
+      margin: 0;
+      padding: 0;
+      box-sizing: border-box;
+      font-family: 'MiSans VF', system-ui, sans-serif;
+    }
+    
+    body {
+      background: white;
+      -webkit-print-color-adjust: exact;
+      print-color-adjust: exact;
+    }
+    
+    .page {
+      width: 2480px;
+      height: 3508px;
+      page-break-after: always;
+      position: relative;
+      overflow: visible; /* 改为visible，确保网格内容可见 */
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    .page:last-child {
+      page-break-after: auto;
+    }
+    
+    /* 2x4 网格布局 - 标签尺寸 1240px × 877px，2列×4行刚好填满A4 */
+    /* A4: 2480px × 3508px (300 DPI) */
+    /* 2列: 1240px × 2 = 2480px ✓ */
+    /* 4行: 877px × 4 = 3508px ✓ */
+    .grid-2x4 {
+      display: grid !important;
+      grid-template-columns: repeat(2, 1240px) !important;
+      grid-template-rows: repeat(4, 877px) !important;
+      width: 2480px !important;
+      height: 3508px !important;
+      gap: 0px; /* 标签间距，可根据需要调整 */
+      /* 确保网格正确应用 */
+      box-sizing: border-box;
+      margin: 0;
+      padding: 0;
+    }
+    
+    /* 3x3 网格布局 - 60x85mm标签，需要根据实际尺寸调整 */
+    .grid-3x3 {
+      display: grid;
+      grid-template-columns: repeat(3, 826px); /* 2480 / 3 ≈ 826px */
+      grid-template-rows: repeat(3, 1169px); /* 3508 / 3 ≈ 1169px */
+      width: 2480px;
+      height: 3508px;
+      gap: 0px; /* 标签间距，可根据需要调整 */
+    }
+    
+    .label-cell {
+      overflow: visible; /* 改为visible，确保标签完全可见 */
+      position: relative;
+      width: 100%;
+      height: 100%;
+      /* 确保标签单元格正确填充网格 */
+      display: flex;
+      align-items: flex-start;
+      justify-content: flex-start;
+      /* 调试：添加边框查看单元格 */
+      /* border: 1px solid blue; */
+    }
+    
+    .label {
+      width: 1240px;
+      height: 877px;
+      position: relative;
+      /* 移除 max-width/max-height，使用固定尺寸 */
+      flex-shrink: 0;
+      /* 调试：添加边框查看标签 */
+      /* border: 2px solid green; */
+    }
+    
+    /* 105x74mm 标签 - 不需要缩放，直接使用原始尺寸 */
+    .scale-105x74 {
+      /* 无缩放，使用原始尺寸 1240px × 877px */
+    }
+    
+    /* 60x85mm 标签 - 需要根据实际标签尺寸调整 */
+    .scale-60x85 {
+      /* 如果60x85mm标签的实际像素尺寸不同，在这里调整 */
+    }
+    
+    /* 标签内部元素样式 */
+    .label .country-flag {
+      position: absolute;
+    }
+    
+    .label .country-flag img {
+      max-height: 200px;
+    }
+    
+    .label .name-cn {
+      position: absolute;
+      display: flex;
+      align-items: baseline;
+    }
+    
+    .label .name-en {
+      position: absolute;
+      display: flex;
+      align-items: baseline;
+    }
+    
+    .label .params {
+      position: absolute;
+      display: flex;
+      align-items: center;
+    }
+    
+    .label .params img {
+      height: 80px;
+    }
+    
+    .label .divider {
+      position: absolute;
+      background-color: #cccccc;
+    }
+    
+    .label .flavor-cn {
+      position: absolute;
+    }
+    
+    .label .flavor-en {
+      position: absolute;
+    }
+    
+    .label .acidity-slider {
+      position: absolute;
+    }
+    
+    .label .acidity-slider img {
+      height: auto;
+    }
+    
+    .label .brewing-method {
+      position: absolute;
+    }
+    
+    .label .brewing-method img {
+      max-width: 500px;
+    }
+    
+    .label .best-before {
+      position: absolute;
+    }
+    
+    .label .roast-date {
+      position: absolute;
+    }
+    
+    .label .weight {
+      position: absolute;
+      text-align: right;
+    }
+    
+    /* 字体权重 */
+    .font-light { font-weight: 300; }
+    .font-normal { font-weight: 400; }
+    .font-medium { font-weight: 500; }
+    .font-bold { font-weight: 700; }
+  </style>
+</head>
+<body>
+  <!-- 页面内容将由 Puppeteer 动态注入 -->
+  <div id="content"></div>
+  
+  <script>
+    // 全局 base URL
+    let globalBaseUrl = '';
+    
+    // 这个脚本会接收数据并渲染标签
+    window.renderLabels = function(data) {
+      const { queue, config, baseUrl } = data;
+      const container = document.getElementById('content');
+      
+      // 保存 base URL
+      globalBaseUrl = baseUrl || '';
+      console.log('使用 base URL:', globalBaseUrl);
+      
+      // 扁平化队列
+      const allItems = [];
+      console.log('[PDF渲染] 接收到的队列:', queue);
+      console.log('[PDF渲染] 队列长度:', queue.length);
+      
+      queue.forEach((item, idx) => {
+        console.log(`[PDF渲染] 队列项 ${idx}: quantity=${item.quantity}, bean=`, item.bean);
+        for (let i = 0; i < item.quantity; i++) {
+          allItems.push(item.bean);
+        }
+      });
+      
+      console.log('[PDF渲染] 扁平化后的总标签数:', allItems.length);
+      
+      const labelSize = allItems[0]?.labelSize || '105x74';
+      const isSmall = labelSize === '60x85';
+      const gridConfig = isSmall 
+        ? { cols: 3, rows: 3, maxItems: 9, gridClass: 'grid-3x3', scaleClass: 'scale-60x85' }
+        : { cols: 2, rows: 4, maxItems: 8, gridClass: 'grid-2x4', scaleClass: 'scale-105x74' };
+      
+      console.log('[PDF渲染] 网格配置:', gridConfig);
+      
+      // 分页
+      const pages = [];
+      for (let i = 0; i < allItems.length; i += gridConfig.maxItems) {
+        pages.push(allItems.slice(i, i + gridConfig.maxItems));
+      }
+      
+      console.log('[PDF渲染] 总页数:', pages.length);
+      pages.forEach((pageItems, idx) => {
+        console.log(`[PDF渲染] 第${idx + 1}页标签数:`, pageItems.length);
+      });
+      
+      // 渲染每一页
+      let html = '';
+      pages.forEach((pageItems, pageIdx) => {
+        html += `<div class="page"><div class="${gridConfig.gridClass}">`;
+        
+        pageItems.forEach((bean, beanIdx) => {
+          console.log(`[PDF渲染] 渲染第${pageIdx + 1}页第${beanIdx + 1}个标签`);
+          html += renderLabel(bean, gridConfig.scaleClass, config);
+        });
+        
+        // 填充空白单元格
+        const emptyCount = gridConfig.maxItems - pageItems.length;
+        console.log(`[PDF渲染] 第${pageIdx + 1}页空白单元格数:`, emptyCount);
+        for (let i = 0; i < emptyCount; i++) {
+          html += `<div class="label-cell"></div>`;
+        }
+        
+        html += `</div></div>`;
+      });
+      
+      container.innerHTML = html;
+    };
+    
+    function renderLabel(bean, scaleClass, config) {
+      const { elements, styles } = config;
+      
+      // 构建名称显示
+      const cnName = buildNameDisplay(bean.nameCnPrefix, bean.nameCnSuffix, '前缀', '后缀');
+      const enName = buildNameDisplay(bean.nameEnPrefix, bean.nameEnSuffix, 'Prefix', 'Suffix');
+      
+      // 格式化日期
+      const formatDate = (dateStr) => {
+        if (!dateStr) return '';
+        const date = new Date(dateStr);
+        if (isNaN(date.getTime())) return dateStr;
+        const year = date.getFullYear();
+        const month = String(date.getMonth() + 1).padStart(2, '0');
+        const day = String(date.getDate()).padStart(2, '0');
+        return `${year}年${month}月${day}日`;
+      };
+      
+      // 获取图片 URL（使用 HTTP 路径）
+      const getImageUrl = (imgPath) => {
+        // 如果路径已经是完整 URL，直接返回
+        if (imgPath.startsWith('http://') || imgPath.startsWith('https://') || imgPath.startsWith('data:')) {
+          return imgPath;
+        }
+        // 确保路径以 / 开头
+        const normalizedPath = imgPath.startsWith('/') ? imgPath : '/' + imgPath;
+        // 使用 base URL 构建完整路径
+        return globalBaseUrl + normalizedPath;
+      };
+      
+      // 国旗路径映射
+      const countryFlags = {
+        'ethiopia': '/flags/ethiopia.png',
+        'colombia': '/flags/colombia.png',
+        'brazil': '/flags/brazil.png',
+        'guatemala': '/flags/guatemala.png',
+        'costa_rica': '/flags/costa_rica.png',
+        'kenya': '/flags/kenya.png',
+        'tanzania': '/flags/tanzania.png',
+        'rwanda': '/flags/rwanda.png',
+        'indonesia': '/flags/indonesia.png',
+        'vietnam': '/flags/vietnam.png',
+        'panama': '/flags/panama.png',
+        'honduras': '/flags/honduras.png',
+        'peru': '/flags/peru.png',
+        'ecuador': '/flags/ecuador.png',
+        'bolivia': '/flags/bolivia.png',
+        'jamaica': '/flags/jamaica.png',
+        'mexico': '/flags/mexico.png',
+        'china': '/flags/china.png',
+        'imprint': '/flags/imprint.png'
+      };
+      
+      // 处理法路径映射
+      const processPaths = {
+        '水洗': '/process/washed.png',
+        '双重水洗': '/process/double_washed.png',
+        '厌氧水洗': '/process/anaerobic.png',
+        '日晒': '/process/natural.png',
+        '日晒半厌氧': '/process/semi-anaerobic_natural.png',
+        '蜜处理': '/process/honey.png',
+        '红蜜处理': '/process/red_honey.png',
+        '酒桶低温发酵': '/process/cold_barrel_fermentation.png',
+        '陈年处理': '/process/aged.png',
+        '湿刨': '/process/wet-hulled.png'
+      };
+      
+      // 烘焙度路径映射
+      const roastPaths = {
+        '极浅烘': '/roast_level/light.png',
+        '浅烘': '/roast_level/medium_light.png',
+        '中烘': '/roast_level/medium.png',
+        '中深烘': '/roast_level/medium_dark.png',
+        '深烘': '/roast_level/dark.png',
+        '极深烘': '/roast_level/very_dark.png',
+        '日式深烘': '/roast_level/japanese_dark.png',
+        'SOE烘焙度': '/roast_level/soe.png'
+      };
+      
+      // 酸苦度路径映射
+      const acidityPaths = {
+        0: '/acid_and_bitter/acid_3.png',
+        1: '/acid_and_bitter/acid_2.png',
+        2: '/acid_and_bitter/acid_1.png',
+        3: '/acid_and_bitter/neutral.png',
+        4: '/acid_and_bitter/bitter_1.png',
+        5: '/acid_and_bitter/bitter_2.png',
+        6: '/acid_and_bitter/bitter_3.png'
+      };
+      
+      let html = `<div class="label-cell"><div class="label ${scaleClass}">`;
+      
+      // 1. 国旗
+      if (bean.country && countryFlags[bean.country]) {
+        html += `<div class="country-flag" style="left: ${elements.country.x}px; top: ${elements.country.y}px;">
+          <img src="${getImageUrl(countryFlags[bean.country])}" alt="flag" />
+        </div>`;
+      }
+      
+      // 2. 中文名
+      html += `<div class="name-cn" style="left: ${elements.nameCn.x}px; bottom: ${elements.nameCn.y}px; font-size: ${styles.nameCnFontSize}px;">`;
+      if (cnName.prefixText) {
+        html += `<span class="font-light" style="color: ${styles.colors.nameCnPrefix}">${cnName.prefixText}</span>`;
+      }
+      if (cnName.divider) {
+        html += `<span class="font-bold" style="margin: 0 8px; color: ${styles.colors.nameCnDivider}">${cnName.divider}</span>`;
+      }
+      if (cnName.suffixText) {
+        html += `<span class="font-bold" style="color: ${styles.colors.nameCnSuffix}">${cnName.suffixText}</span>`;
+      }
+      html += `</div>`;
+      
+      // 3. 英文名
+      html += `<div class="name-en" style="left: ${elements.nameEn.x}px; top: ${elements.nameEn.y}px; font-size: ${styles.nameEnFontSize}px;">`;
+      if (enName.prefixText) {
+        html += `<span class="font-light" style="color: ${styles.colors.nameEnPrefix}">${enName.prefixText}</span>`;
+      }
+      if (enName.divider) {
+        html += `<span class="font-bold" style="margin: 0 8px; color: ${styles.colors.nameEnDivider}">${enName.divider}</span>`;
+      }
+      if (enName.suffixText) {
+        html += `<span class="font-bold" style="color: ${styles.colors.nameEnSuffix}">${enName.suffixText}</span>`;
+      }
+      html += `</div>`;
+      
+      // 4. 参数组
+      html += `<div class="params" style="left: ${elements.params.x}px; top: ${elements.params.y}px; gap: ${styles.paramGap}px;">`;
+      
+      // 处理法
+      if (bean.process && bean.process.trim() && processPaths[bean.process]) {
+        html += `<img src="${getImageUrl(processPaths[bean.process])}" alt="${bean.process}" />`;
+      }
+      
+      // 烘焙度
+      if (bean.roastLevel && roastPaths[bean.roastLevel]) {
+        html += `<img src="${getImageUrl(roastPaths[bean.roastLevel])}" alt="${bean.roastLevel}" />`;
+      }
+      
+      // 海拔
+      if (bean.altitude && bean.altitude.trim()) {
+        html += `<div style="position: relative;">
+          <img src="${getImageUrl('/other/altitude.png')}" alt="altitude" />
+          <div style="position: absolute; left: 50%; top: 6px; transform: translateX(-50%); font-size: ${styles.paramFontSize}px; color: ${styles.colors.paramText}; white-space: nowrap;">
+            ${bean.altitude}m
+          </div>
+        </div>`;
+      }
+      
+      html += `</div>`;
+      
+      // 5. 分割线
+      html += `<div class="divider" style="left: ${elements.divider.x}px; top: ${elements.divider.y}px; width: ${styles.dividerWidth}px; height: ${styles.dividerHeight}px; background-color: ${styles.dividerColor};"></div>`;
+      
+      // 6. 中文风味
+      if (bean.flavorCn) {
+        html += `<div class="flavor-cn" style="left: ${elements.flavorCn.x}px; top: ${elements.flavorCn.y}px; width: ${config.width / 2 - elements.flavorCn.x}px; font-size: ${styles.flavorCnFontSize}px; font-weight: ${styles.flavorCnFontWeight}; color: ${styles.colors.flavorCn}; line-height: ${styles.flavorCnLineHeight};">
+          ${bean.flavorCn}
+        </div>`;
+      }
+      
+      // 7. 英文风味
+      if (bean.flavorEn) {
+        html += `<div class="flavor-en" style="left: ${elements.flavorEn.x}px; top: ${elements.flavorEn.y}px; width: ${config.width / 2 - elements.flavorEn.x}px; font-size: ${styles.flavorEnFontSize}px; font-weight: ${styles.flavorEnFontWeight}; color: ${styles.colors.flavorEn}; line-height: ${styles.flavorEnLineHeight};">
+          ${bean.flavorEn}
+        </div>`;
+      }
+      
+      // 8. 酸苦度
+      if (bean.acidityValue !== undefined && bean.acidityValue !== null && acidityPaths[bean.acidityValue]) {
+        html += `<div class="acidity-slider" style="left: ${elements.slider.x}px; top: ${elements.slider.y}px;">
+          <img src="${getImageUrl(acidityPaths[bean.acidityValue])}" alt="acidity" />
+        </div>`;
+      }
+      
+      // 9. 冲煮方式
+      if (bean.brewingMethod) {
+        const methodPath = bean.brewingMethod === 'espresso' 
+          ? '/brewing_suggestions/espresso.png'
+          : '/brewing_suggestions/pour-over.png';
+        html += `<div class="brewing-method" style="left: ${elements.method.x}px; top: ${elements.method.y}px;">
+          <img src="${getImageUrl(methodPath)}" alt="${bean.brewingMethod}" />
+        </div>`;
+      }
+      
+      // 10. 最佳赏味期限
+      html += `<div class="best-before" style="left: ${elements.bestBefore.x}px; top: ${elements.bestBefore.y}px; font-size: ${styles.bestBeforeFontSize}px; font-weight: ${styles.bestBeforeFontWeight}; color: ${styles.colors.bestBefore};">
+        最佳赏味期限:请于2个月内享用
+      </div>`;
+      
+      // 11. 烘焙日期
+      if (bean.roastDate) {
+        html += `<div class="roast-date" style="left: ${elements.roastDate.x}px; top: ${elements.roastDate.y}px; font-size: ${styles.roastDateFontSize}px; font-weight: ${styles.roastDateFontWeight}; color: ${styles.colors.roastDate};">
+          烘焙日期：${formatDate(bean.roastDate)}
+        </div>`;
+      }
+      
+      // 12. 重量
+      if (bean.weight) {
+        html += `<div class="weight" style="left: ${elements.weight.x}px; top: ${elements.weight.y}px; font-size: ${styles.weightFontSize}px; font-weight: ${styles.weightFontWeight}; color: ${styles.colors.weight};">
+          ${bean.weight}
+        </div>`;
+      }
+      
+      html += `</div></div>`;
+      
+      return html;
+    }
+    
+    function buildNameDisplay(prefix, suffix, placeholderPrefix, placeholderSuffix) {
+      const safePrefix = prefix || '';
+      const safeSuffix = suffix || '';
+      const hasPrefix = safePrefix.trim().length > 0;
+      const hasSuffix = safeSuffix.trim().length > 0;
+      const hasAny = hasPrefix || hasSuffix;
+      
+      return {
+        prefixText: hasPrefix ? safePrefix : (hasAny ? '' : placeholderPrefix),
+        suffixText: hasSuffix ? safeSuffix : (hasAny ? '' : placeholderSuffix),
+        divider: (hasPrefix && hasSuffix) || !hasAny ? '·' : ''
+      };
+    }
+  </script>
+</body>
+</html>
